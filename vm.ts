@@ -1,3 +1,4 @@
+import { blue, cyan } from "./debug.ts";
 import {
   AddressType,
   OffsetSign,
@@ -12,6 +13,9 @@ const assertNotReached = (_: never) => {};
 
 const MEM_SIZE = 65536;
 
+type VMEventType = "syscall";
+type VMEventHandler = (type: number, vm: VM) => void;
+
 export class VM {
   rom = new Uint8Array(0);
   memory = new Uint8Array(MEM_SIZE);
@@ -19,21 +23,25 @@ export class VM {
   x = 0;
   y = 0;
   ip = 0;
-  sp = MEM_SIZE - 1;
+  sp = MEM_SIZE;
   fp = MEM_SIZE - 1;
 
-  debug = true;
+  debug: boolean;
+
+  constructor({ debug }: { debug?: boolean }) {
+    this.debug = debug ? true : false;
+  }
 
   debugLog(message: string) {
     if (this.debug) {
-      console.log("vm:", message);
+      console.log(message);
     }
   }
 
   push(value: number) {
     this.debugLog(`push: ${value}, sp=$${this.sp}`);
-    this.memory[this.sp] = value;
     this.sp--;
+    this.memory[this.sp] = value;
   }
 
   pop(): number {
@@ -73,27 +81,29 @@ export class VM {
   }
 
   setRegister(r: Register, value: number) {
+    this.debugLog(`setting ${cyan(Register[r])} to ${cyan(value)}`);
+
     switch (r) {
       case Register.A:
-        this.a = value;
+        this.a = value % 0x100;
         return;
       case Register.X:
-        this.x = value;
+        this.x = value % 0x100;
         return;
       case Register.Y:
-        this.y = value;
+        this.y = value % 0x100;
         return;
       case Register.XY:
-        this.y = value;
+        this.y = value % 0x10000;
         return;
       case Register.IP:
-        this.ip = value;
+        this.ip = value % 0x10000;
         return;
       case Register.SP:
-        this.sp = value;
+        this.sp = value % 0x10000;
         return;
       case Register.FP:
-        this.fp = value;
+        this.fp = value % 0x10000;
         return;
     }
   }
@@ -114,12 +124,35 @@ export class VM {
     this.setRegister(Register.A, operation(leftValue, rightValue));
   }
 
+  call(address: number) {
+    const prevFramePointer = this.getRegister(Register.FP);
+    const returnAddress = this.getRegister(Register.IP);
+
+    const framePointer = this.getRegister(Register.SP);
+
+    this.push(returnAddress & 0xff);
+    this.push((returnAddress & 0xff00) >> 8);
+
+    this.push(prevFramePointer & 0xff);
+    this.push((prevFramePointer & 0xff00) >> 8);
+
+    this.push(this.y);
+    this.push(this.x);
+
+    this.debugLog(
+      `call: $${address}, return address is $${returnAddress}, fp is $${framePointer}`
+    );
+
+    this.setRegister(Register.FP, framePointer);
+    this.setRegister(Register.IP, address);
+  }
+
   execute(opcode: Opcode) {
-    this.debugLog(`* executing ${Opcode[opcode]} *`);
+    this.debugLog(blue(`* executing ${Opcode[opcode]} *`));
 
     switch (opcode) {
       case Opcode.Halt:
-        this.ip = this.rom.length;
+        this.setRegister(Register.IP, this.rom.length);
         return;
       case Opcode.Set: {
         const destination: Register = this.fetch();
@@ -250,9 +283,21 @@ export class VM {
         this.executeArithmeticLogicInstruction((left) => ~left);
         return;
       }
+      case Opcode.EqualTo: {
+        this.executeArithmeticLogicInstruction((left, right) =>
+          left === right ? 1 : 0
+        );
+        return;
+      }
+      case Opcode.NotEqualTo: {
+        this.executeArithmeticLogicInstruction((left, right) =>
+          left !== right ? 1 : 0
+        );
+        return;
+      }
       case Opcode.Jump: {
         const address = this.fetch16();
-        this.ip = address;
+        this.setRegister(Register.IP, address);
         this.debugLog(`jumping to: ${address}`);
         return;
       }
@@ -261,7 +306,7 @@ export class VM {
         const address = this.fetch16();
         if (value === 0) {
           this.debugLog(`jumping to: ${address}`);
-          this.ip = address;
+          this.setRegister(Register.IP, address);
         }
         return;
       }
@@ -270,35 +315,18 @@ export class VM {
         const address = this.fetch16();
         if (value !== 0) {
           this.debugLog(`jumping to: ${address}`);
-          this.ip = address;
+          this.setRegister(Register.IP, address);
         }
         return;
       }
       case Opcode.Call: {
-        const callingAddress = this.fetch16();
-
-        const prevFramePointer = this.getRegister(Register.FP);
-        const returnAddress = this.getRegister(Register.IP) + 1;
-
-        const framePointer = this.getRegister(Register.SP);
-
-        this.push(returnAddress & 0xff);
-        this.push((returnAddress & 0xff00) >> 8);
-
-        this.push(prevFramePointer & 0xff);
-        this.push((prevFramePointer & 0xff00) >> 8);
-
-        this.debugLog(
-          `call: $${callingAddress}, return address is $${returnAddress}, fp is $${framePointer}`
-        );
-
-        this.setRegister(Register.FP, framePointer);
-        this.setRegister(Register.IP, callingAddress);
+        const addressToCall = this.fetch16();
+        this.call(addressToCall);
         return;
       }
       case Opcode.Return: {
-        // not really sure why but I have to decrement the stack pointer here for this to work out
-        this.pop();
+        this.x = this.pop();
+        this.y = this.pop();
 
         const framePointerH = this.pop();
         const framePointerL = this.pop();
@@ -326,20 +354,64 @@ export class VM {
         this.push(resolvedValue);
         return;
       }
-      case Opcode.Pop:
-        this.setRegister(Register.A, this.pop());
+      case Opcode.Pop: {
+        const destination: Register = this.fetch();
+        this.setRegister(destination, this.pop());
         return;
+      }
+
+      case Opcode.SysCall: {
+        const code = this.fetch();
+        this.listeners["syscall"].forEach((handler) => handler(code, this));
+        return;
+      }
+
       default:
         assertNotReached(opcode);
         throw `unknown opcode: ${Opcode[opcode] || opcode}`;
     }
   }
 
-  run(rom: Uint8Array) {
+  interrupt() {
+    const RENDER_ADDRESS = 3;
+    this.call(RENDER_ADDRESS);
+  }
+
+  load(rom: Uint8Array) {
     this.rom = rom;
+  }
+
+  tick() {
+    if (this.ip < this.rom.length) {
+      this.execute(this.fetch());
+    }
+  }
+
+  listeners: Record<VMEventType, VMEventHandler[]> = {
+    syscall: [],
+  };
+
+  addEventListener(type: VMEventType, handler: VMEventHandler) {
+    this.listeners[type].push(handler);
+  }
+
+  removeEventListener(type: VMEventType, handler: VMEventHandler) {
+    this.listeners[type].filter((x) => x !== handler);
+  }
+
+  run() {
+    if (!this.rom) return;
 
     while (this.ip < this.rom.length) {
       this.execute(this.fetch());
     }
+  }
+
+  readMem(start: number, end: number) {
+    return this.memory.slice(start, end);
+  }
+
+  writeMem(position: number, value: number) {
+    this.memory[position] = value;
   }
 }

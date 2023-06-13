@@ -65,12 +65,11 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       ? [AddressType.Register, registerByNameLookup[address as RegisterName], 0]
       : [
           AddressType.Literal,
-          ((address === "label" ? 0 : parseNumber(address)) && 0xff00) >> 8,
-          (address === "label" ? 0 : parseNumber(address)) && 0xff,
+          ((address === "label" ? 0 : parseNumber(address)) & 0xff00) >> 8,
+          (address === "label" ? 0 : parseNumber(address)) & 0xff,
         ];
 
   return [
-    // peek <address-source>
     {
       source: `
       label:
@@ -83,7 +82,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         0,
       ],
     },
-    // peek <address-source>[0]
     {
       source: `
       label:
@@ -96,7 +94,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         0,
       ],
     },
-    // peek <address-source>[1]
     {
       source: `
       label:
@@ -109,7 +106,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         1,
       ],
     },
-    // peek <address-source>[+1]
     {
       source: `
       label:
@@ -122,7 +118,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         1,
       ],
     },
-    // peek <address-source>[-1]
     {
       source: `
       label:
@@ -135,7 +130,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         1,
       ],
     },
-    // peek <address-source>[a]
     {
       source: `
       label:
@@ -148,7 +142,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         Register.A,
       ],
     },
-    // peek <address-source>[+a]
     {
       source: `
       label:
@@ -161,7 +154,6 @@ const getPeekTests = (addressType: AddressType, address: string) => {
         Register.A,
       ],
     },
-    // peek <address-source>[-a]
     {
       source: `
       label:
@@ -183,12 +175,11 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       ? [AddressType.Register, registerByNameLookup[address as RegisterName], 0]
       : [
           AddressType.Literal,
-          ((address === "label" ? 0 : parseNumber(address)) && 0xff00) >> 8,
-          (address === "label" ? 0 : parseNumber(address)) && 0xff,
+          ((address === "label" ? 0 : parseNumber(address)) & 0xff00) >> 8,
+          (address === "label" ? 0 : parseNumber(address)) & 0xff,
         ];
 
   return [
-    // poke <address-source>
     {
       source: `
       label:
@@ -201,7 +192,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         0,
       ],
     },
-    // poke <address-source>[0]
     {
       source: `
       label:
@@ -214,7 +204,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         0,
       ],
     },
-    // poke <address-source>[1]
     {
       source: `
       label:
@@ -227,7 +216,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         1,
       ],
     },
-    // poke <address-source>[+1]
     {
       source: `
       label:
@@ -240,7 +228,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         1,
       ],
     },
-    // poke <address-source>[-1]
     {
       source: `
       label:
@@ -253,7 +240,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         1,
       ],
     },
-    // poke <address-source>[a]
     {
       source: `
       label:
@@ -266,7 +252,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         Register.A,
       ],
     },
-    // poke <address-source>[+a]
     {
       source: `
       label:
@@ -279,7 +264,6 @@ const getPokeTests = (addressType: AddressType, address: string) => {
         Register.A,
       ],
     },
-    // poke <address-source>[-a]
     {
       source: `
       label:
@@ -321,12 +305,12 @@ const labelTestData: { source: string; expected: number[] }[] = [
   },
   {
     source: `
-        pop
+        pop a
         label:
         halt
         call label
       `,
-    expected: [Opcode.Pop, Opcode.Halt, Opcode.Call, 0, 1],
+    expected: [Opcode.Pop, Register.A, Opcode.Halt, Opcode.Call, 0, 1],
   },
   {
     source: `
@@ -355,6 +339,8 @@ const operatorTestData: [string, Opcode][] = [
   ["/", Opcode.Divide],
   ["<<", Opcode.ShiftLeft],
   [">>", Opcode.ShiftRight],
+  ["==", Opcode.EqualTo],
+  ["!=", Opcode.NotEqualTo],
   ["&", Opcode.And],
   ["|", Opcode.Or],
   ["~", Opcode.Not],
@@ -379,7 +365,9 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
   })),
 
   // subroutines
-  { source: "pop", expected: [Opcode.Pop] },
+  { source: "pop", expected: [Opcode.Pop, Register.A] },
+  { source: "pop a", expected: [Opcode.Pop, Register.A] },
+  { source: "pop x", expected: [Opcode.Pop, Register.X] },
   { source: "return", expected: [Opcode.Return] },
   // labels
   ...labelTestData,
@@ -401,6 +389,19 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
   ...getPokeTests(AddressType.Register, "xy"),
   ...getPokeTests(AddressType.Literal, "0xabcd"),
   ...getPokeTests(AddressType.Literal, "label"),
+
+  {
+    source: "poke 0xcccc",
+    expected: [
+      Opcode.Poke,
+      AddressType.Literal,
+      0xcc,
+      0xcc,
+      OffsetType.Literal,
+      OffsetSign.Plus,
+      0,
+    ],
+  },
 
   // push
   {
@@ -456,6 +457,12 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
         label:
         jump!=0 label`,
     expected: [Opcode.JumpIfNotZero, 0, 0],
+  },
+
+  // syscall
+  {
+    source: "syscall 123",
+    expected: [Opcode.SysCall, 123],
   },
 ];
 

@@ -41,6 +41,8 @@ registers:
 | `/`      | divide           |                      |
 | `<<`     | shift bits left  |                      |
 | `>>`     | shift bits right |                      |
+| `==`     | equals           |                      |
+| `!=`     | equals           |                      |
 | `&`      | bitwise and      |                      |
 | `\|`     | bitwise or       |                      |
 | `~`      | bitwise not      | (left register only) |
@@ -129,4 +131,6 @@ fp[1] // arg 3, 33 peek fp[2] // arg 2, 22 peek fp[3] // arg 1, 11 return
 
 start: // push args push 11 // arg 1 push 22 // arg 2 push 33 // arg 3 call
 cool_subroutine halt
+
+caller must remove args from stack after call
 ```

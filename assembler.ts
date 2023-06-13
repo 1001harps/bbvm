@@ -4,6 +4,7 @@ import {
   OffsetType,
   Opcode,
   OperandType,
+  Register,
   RegisterName,
   instructionWidth,
   opcodeByInstructionNameLookup,
@@ -41,7 +42,6 @@ export class Assembler {
 
   singleOpcodeInstructions: Record<string, Opcode> = {
     halt: Opcode.Halt,
-    pop: Opcode.Pop,
     return: Opcode.Return,
   };
 
@@ -59,6 +59,8 @@ export class Assembler {
     "/": Opcode.Divide,
     "<<": Opcode.ShiftLeft,
     ">>": Opcode.ShiftRight,
+    "==": Opcode.EqualTo,
+    "!=": Opcode.NotEqualTo,
     "&": Opcode.And,
     "|": Opcode.Or,
     "~": Opcode.Not,
@@ -273,7 +275,7 @@ export class Assembler {
               registerByNameLookup[addressSourceString as RegisterName],
               0,
             ]
-          : [AddressType.Literal, (address && 0xff00) >> 8, address && 0xff];
+          : [AddressType.Literal, (address & 0xff00) >> 8, address & 0xff];
 
       // no offset
       if (offsetStartIndex === -1) {
@@ -353,7 +355,7 @@ export class Assembler {
               registerByNameLookup[addressSourceString as RegisterName],
               0,
             ]
-          : [AddressType.Literal, (address && 0xff00) >> 8, address && 0xff];
+          : [AddressType.Literal, (address & 0xff00) >> 8, address & 0xff];
 
       // no offset
       if (offsetStartIndex === -1) {
@@ -417,6 +419,36 @@ export class Assembler {
       }
 
       return;
+    }
+
+    if (instruction === "pop") {
+      this.program.push(Opcode.Pop);
+
+      if (operands.length >= 1) {
+        if (isRegister(operands[0])) {
+          this.program.push(registerByNameLookup[operands[0] as RegisterName]);
+          return;
+        }
+
+        throw `pop: expected register, got '${operands[0]}'`;
+      }
+
+      this.program.push(Register.A);
+      return;
+    }
+
+    if (instruction === "syscall") {
+      this.program.push(Opcode.SysCall);
+      if (operands.length !== 1) {
+        throw "syscall: expected operand";
+      }
+
+      if (isNumber(operands[0])) {
+        this.parseAndPushNumber(operands[0]);
+        return;
+      }
+
+      throw "syscall: expected number";
     }
 
     throw `encountered unknown instruction: ${instruction}`;

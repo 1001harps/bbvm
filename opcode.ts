@@ -47,6 +47,8 @@ export enum Opcode {
   Divide,
   ShiftLeft,
   ShiftRight,
+  EqualTo,
+  NotEqualTo,
   And,
   Or,
   Not,
@@ -60,6 +62,8 @@ export enum Opcode {
 
   Push,
   Pop,
+
+  SysCall,
 }
 
 export const opcodeByInstructionNameLookup: Record<string, Opcode> = {
@@ -73,6 +77,8 @@ export const opcodeByInstructionNameLookup: Record<string, Opcode> = {
   "/": Opcode.Divide,
   "<<": Opcode.ShiftLeft,
   ">>": Opcode.ShiftRight,
+  "==": Opcode.EqualTo,
+  "!=": Opcode.NotEqualTo,
   "&": Opcode.And,
   "|": Opcode.Or,
   "~": Opcode.Not,
@@ -83,6 +89,7 @@ export const opcodeByInstructionNameLookup: Record<string, Opcode> = {
   return: Opcode.Return,
   push: Opcode.Push,
   pop: Opcode.Pop,
+  syscall: Opcode.SysCall,
 };
 
 export const instructionWidth: Record<Opcode, number> = {
@@ -96,6 +103,8 @@ export const instructionWidth: Record<Opcode, number> = {
   [Opcode.Divide]: 4,
   [Opcode.ShiftLeft]: 4,
   [Opcode.ShiftRight]: 4,
+  [Opcode.EqualTo]: 4,
+  [Opcode.NotEqualTo]: 4,
   [Opcode.And]: 4,
   [Opcode.Or]: 4,
   [Opcode.Not]: 4,
@@ -105,7 +114,8 @@ export const instructionWidth: Record<Opcode, number> = {
   [Opcode.Call]: 3,
   [Opcode.Return]: 1,
   [Opcode.Push]: 3,
-  [Opcode.Pop]: 1,
+  [Opcode.Pop]: 2,
+  [Opcode.SysCall]: 2,
 };
 
 export enum AddressType {
