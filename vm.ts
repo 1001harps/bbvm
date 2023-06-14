@@ -7,7 +7,7 @@ import {
   OperandType,
   Register,
   RegisterName,
-} from "./opcode.ts";
+} from "./core/opcode.ts";
 
 const assertNotReached = (_: never) => {};
 

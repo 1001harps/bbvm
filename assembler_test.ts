@@ -8,7 +8,7 @@ import {
   Register,
   RegisterName,
   registerByNameLookup,
-} from "./opcode.ts";
+} from "./core/opcode.ts";
 import { Assembler, isNumber, isRegister, parseNumber } from "./assembler.ts";
 
 //#region parse functions
@@ -60,7 +60,7 @@ Deno.test(`assembler: isRegister("not a register") = false`, () => {
 //#endregion
 
 const getPeekTests = (addressType: AddressType, address: string) => {
-  const sourceOperands =
+  const addressOperands =
     addressType === AddressType.Register
       ? [AddressType.Register, registerByNameLookup[address as RegisterName], 0]
       : [
@@ -76,7 +76,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         0,
@@ -88,7 +88,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[0]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         0,
@@ -100,7 +100,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[1]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         1,
@@ -112,7 +112,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[+1]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         1,
@@ -124,7 +124,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[-1]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Minus,
         1,
@@ -136,7 +136,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[a]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Register,
         OffsetSign.Plus,
         Register.A,
@@ -148,7 +148,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[+a]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Register,
         OffsetSign.Plus,
         Register.A,
@@ -160,7 +160,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
       peek ${address}[-a]`,
       expected: [
         Opcode.Peek,
-        ...sourceOperands,
+        ...addressOperands,
         OffsetType.Register,
         OffsetSign.Minus,
         Register.A,
@@ -170,7 +170,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
 };
 
 const getPokeTests = (addressType: AddressType, address: string) => {
-  const destinationOperands =
+  const addressOperands =
     addressType === AddressType.Register
       ? [AddressType.Register, registerByNameLookup[address as RegisterName], 0]
       : [
@@ -186,7 +186,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         0,
@@ -198,7 +198,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[0]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         0,
@@ -210,7 +210,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[1]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         1,
@@ -222,7 +222,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[+1]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Plus,
         1,
@@ -234,7 +234,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[-1]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Literal,
         OffsetSign.Minus,
         1,
@@ -246,7 +246,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[a]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Register,
         OffsetSign.Plus,
         Register.A,
@@ -258,7 +258,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[+a]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Register,
         OffsetSign.Plus,
         Register.A,
@@ -270,7 +270,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
       poke ${address}[-a]`,
       expected: [
         Opcode.Poke,
-        ...destinationOperands,
+        ...addressOperands,
         OffsetType.Register,
         OffsetSign.Minus,
         Register.A,
@@ -310,7 +310,7 @@ const labelTestData: { source: string; expected: number[] }[] = [
         halt
         call label
       `,
-    expected: [Opcode.Pop, Register.A, Opcode.Halt, Opcode.Call, 0, 1],
+    expected: [Opcode.Pop, Register.A, Opcode.Halt, Opcode.Call, 0, 2],
   },
   {
     source: `

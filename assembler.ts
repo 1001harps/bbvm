@@ -6,10 +6,17 @@ import {
   OperandType,
   Register,
   RegisterName,
+  emptyOffset,
+  Offset,
+  encodeMemoryAccessInstruction,
   instructionWidth,
   opcodeByInstructionNameLookup,
   registerByNameLookup,
-} from "./opcode.ts";
+  BranchingInstructionOpcode,
+  encodeBranchingInstruction,
+  encodeSetInstruction,
+  Operand,
+} from "./core/opcode.ts";
 
 export const isNumber = (s: string) => {
   if (s.match(/^\d/)) {
@@ -45,7 +52,7 @@ export class Assembler {
     return: Opcode.Return,
   };
 
-  singleOpcodeWithAddressInstructions: Record<string, Opcode> = {
+  branchingInstructions: Record<string, Opcode> = {
     call: Opcode.Call,
     jump: Opcode.Jump,
     "jump==0": Opcode.JumpIfZero,
@@ -122,23 +129,89 @@ export class Assembler {
     }
   }
 
-  parseOperandAndAddressInstruction(
-    name: string,
-    opcode: Opcode,
+  pushInstruction(instruction: Uint8Array) {
+    instruction.forEach((b) => this.program.push(b));
+  }
+
+  resolveAddressString(address: string) {
+    if (isNumber(address)) {
+      return parseNumber(address);
+    }
+
+    return this.resolveLabelAddress(address);
+  }
+
+  parseMemoryAccessInstruction(
+    opcode: Opcode.Peek | Opcode.Poke,
     operands: string[]
   ) {
-    this.program.push(opcode);
     if (operands.length !== 1) {
-      throw `${name}: expected operand`;
+      throw "expected operand";
     }
 
-    if (isNumber(operands[0])) {
-      this.parseAndPushNumber16(operands[0]);
-      return;
+    const offsetStartIndex = operands[0].indexOf("[");
+    let addressSourceString = operands[0];
+    if (offsetStartIndex !== -1) {
+      addressSourceString = operands[0].substring(0, offsetStartIndex);
     }
 
-    this.resolveAndPushLabelAddress(operands[0]);
+    // get type
+    const type = isRegister(addressSourceString)
+      ? AddressType.Register
+      : AddressType.Literal;
+
+    // get value
+    const value =
+      type === AddressType.Literal
+        ? this.resolveAddressString(addressSourceString)
+        : registerByNameLookup[addressSourceString as RegisterName];
+
+    // get offset
+    const hasOffset = offsetStartIndex !== -1;
+    const offset = hasOffset
+      ? this.parseOffsetString(operands[0].substring(offsetStartIndex))
+      : emptyOffset();
+
+    const instruction = encodeMemoryAccessInstruction(opcode, {
+      type,
+      value,
+      offset,
+    });
+
+    instruction.forEach((o) => this.program.push(o));
   }
+
+  parseOffsetString = (offset: string): Offset => {
+    if (!offset.startsWith("[") && !offset.endsWith("]")) {
+      throw `invalid offset: ${offset}`;
+    }
+
+    offset = offset.substring(1, offset.length - 1);
+
+    let sign = OffsetSign.Plus;
+    const hasSign = offset[0] === "-" || offset[0] === "+";
+
+    if (hasSign) {
+      if (offset[0] === "-") {
+        sign = OffsetSign.Minus;
+      }
+
+      offset = offset.substring(1);
+    }
+
+    const type = isRegister(offset) ? OffsetType.Register : OffsetType.Literal;
+
+    const value =
+      type == OffsetType.Register
+        ? registerByNameLookup[offset as RegisterName]
+        : parseNumber(offset) & 0xff;
+
+    return {
+      type,
+      sign,
+      value,
+    };
+  };
 
   parseArithmeticLogicInstruction(
     name: string,
@@ -171,6 +244,52 @@ export class Assembler {
     }
   }
 
+  parseOperand(operandString: string): Operand {
+    const type = isNumber(operandString)
+      ? OperandType.Literal
+      : OperandType.Register;
+
+    const value =
+      type === OperandType.Literal
+        ? parseNumber(operandString)
+        : registerByNameLookup[operandString as RegisterName];
+
+    return {
+      type,
+      value,
+    };
+  }
+
+  parseSetInstruction(operands: string[]) {
+    if (operands.length !== 1) {
+      throw "set: expected operand";
+    }
+
+    const [destinationString, sourceString] = operands[0].split("=");
+
+    if (!isRegister(destinationString)) {
+      throw `set: expected register for destination, got ${destinationString}`;
+    }
+
+    const destination = registerByNameLookup[destinationString as RegisterName];
+
+    const source = this.parseOperand(sourceString);
+
+    this.pushInstruction(encodeSetInstruction({ destination, source }));
+  }
+
+  parsePushInstruction(operands: string[]) {
+    if (operands.length !== 1) {
+      throw "push: expected operand";
+    }
+
+    const operand = this.parseOperand(operands[0]);
+
+    this.program.push(Opcode.Push);
+    this.program.push(operand.type);
+    this.program.push(operand.value);
+  }
+
   parseLine(line: string) {
     line = line.trim();
 
@@ -194,230 +313,43 @@ export class Assembler {
       return;
     }
 
-    if (instruction in this.singleOpcodeWithAddressInstructions) {
-      this.parseOperandAndAddressInstruction(
-        instruction,
-        this.singleOpcodeWithAddressInstructions[instruction],
-        operands
-      );
+    if (instruction in this.branchingInstructions) {
+      if (operands.length !== 1) {
+        throw `${instruction}: expected operand`;
+      }
+
+      const opcode = this.branchingInstructions[
+        instruction
+      ] as BranchingInstructionOpcode;
+
+      const address = this.resolveAddressString(operands[0]);
+      this.pushInstruction(encodeBranchingInstruction(opcode, address));
       return;
     }
 
     if (instruction in this.arithmeticLogicInstructions) {
-      this.parseArithmeticLogicInstruction(
-        instruction,
-        this.arithmeticLogicInstructions[instruction],
-        operands
-      );
+      const opcode = this.arithmeticLogicInstructions[instruction];
+      this.parseArithmeticLogicInstruction(instruction, opcode, operands);
       return;
     }
 
     if (instruction === "set") {
-      this.program.push(Opcode.Set);
-      if (operands.length !== 1) {
-        throw "set: expected operand";
-      }
-
-      const [destination, source] = operands[0].split("=");
-
-      if (!isRegister(destination)) {
-        throw `set: expected register for destination, got ${destination}`;
-      }
-
-      this.program.push(registerByNameLookup[destination as RegisterName]);
-
-      if (isNumber(source)) {
-        this.program.push(OperandType.Literal);
-        this.parseAndPushNumber(source);
-        return;
-      }
-
-      if (isRegister(source)) {
-        this.program.push(OperandType.Register);
-        this.program.push(registerByNameLookup[source as RegisterName]);
-        return;
-      }
-
-      throw `set: expected number or register for source, got ${source}`;
+      this.parseSetInstruction(operands);
+      return;
     }
 
     if (instruction === "peek") {
-      this.program.push(Opcode.Peek);
-      if (operands.length !== 1) {
-        throw "peek: expected operand";
-      }
-
-      const offsetStartIndex = operands[0].indexOf("[");
-      let addressSourceString = operands[0];
-      if (offsetStartIndex !== -1) {
-        addressSourceString = operands[0].substring(0, offsetStartIndex);
-      }
-
-      const addressSourceType = isRegister(addressSourceString)
-        ? AddressType.Register
-        : AddressType.Literal;
-
-      let address = 0;
-
-      if (
-        addressSourceType === AddressType.Literal &&
-        !isNumber(addressSourceString)
-      ) {
-        address = this.resolveLabelAddress(addressSourceString);
-      } else {
-        address = parseNumber(addressSourceString);
-      }
-
-      const addressSourceOperands =
-        addressSourceType === AddressType.Register
-          ? [
-              AddressType.Register,
-              registerByNameLookup[addressSourceString as RegisterName],
-              0,
-            ]
-          : [AddressType.Literal, (address & 0xff00) >> 8, address & 0xff];
-
-      // no offset
-      if (offsetStartIndex === -1) {
-        addressSourceOperands.forEach((o) => this.program.push(o));
-        this.program.push(OffsetType.Literal);
-        this.program.push(OffsetSign.Plus);
-        this.program.push(0);
-        return;
-      }
-
-      let offset = operands[0].substring(offsetStartIndex);
-      if (!offset.startsWith("[") && !offset.endsWith("]")) {
-        throw `peek: invalid offset: ${offset}`;
-      }
-
-      offset = offset.substring(1, offset.length - 1);
-
-      let sign = OffsetSign.Plus;
-      const hasSign = offset[0] === "-" || offset[0] === "+";
-
-      if (hasSign) {
-        if (offset[0] === "-") {
-          sign = OffsetSign.Minus;
-        }
-
-        offset = offset.substring(1);
-      }
-
-      const offsetSource = isRegister(offset)
-        ? OffsetType.Register
-        : OffsetType.Literal;
-
-      const offsetValue =
-        offsetSource == OffsetType.Register
-          ? registerByNameLookup[offset as RegisterName]
-          : parseNumber(offset) & 0xff;
-
-      addressSourceOperands.forEach((o) => this.program.push(o));
-      this.program.push(offsetSource);
-      this.program.push(sign);
-      this.program.push(offsetValue);
-
+      this.parseMemoryAccessInstruction(Opcode.Peek, operands);
       return;
     }
 
     if (instruction === "poke") {
-      this.program.push(Opcode.Poke);
-      if (operands.length !== 1) {
-        throw "peek: expected operand";
-      }
-
-      const offsetStartIndex = operands[0].indexOf("[");
-      let addressSourceString = operands[0];
-      if (offsetStartIndex !== -1) {
-        addressSourceString = operands[0].substring(0, offsetStartIndex);
-      }
-
-      const addressSourceType = isRegister(addressSourceString)
-        ? AddressType.Register
-        : AddressType.Literal;
-
-      let address = 0;
-
-      if (
-        addressSourceType === AddressType.Literal &&
-        !isNumber(addressSourceString)
-      ) {
-        address = this.resolveLabelAddress(addressSourceString);
-      } else {
-        address = parseNumber(addressSourceString);
-      }
-
-      const addressSourceOperands =
-        addressSourceType === AddressType.Register
-          ? [
-              AddressType.Register,
-              registerByNameLookup[addressSourceString as RegisterName],
-              0,
-            ]
-          : [AddressType.Literal, (address & 0xff00) >> 8, address & 0xff];
-
-      // no offset
-      if (offsetStartIndex === -1) {
-        addressSourceOperands.forEach((o) => this.program.push(o));
-        this.program.push(OffsetType.Literal);
-        this.program.push(OffsetSign.Plus);
-        this.program.push(0);
-        return;
-      }
-
-      let offset = operands[0].substring(offsetStartIndex);
-      if (!offset.startsWith("[") && !offset.endsWith("]")) {
-        throw `peek: invalid offset: ${offset}`;
-      }
-
-      offset = offset.substring(1, offset.length - 1);
-
-      let sign = OffsetSign.Plus;
-      const hasSign = offset[0] === "-" || offset[0] === "+";
-
-      if (hasSign) {
-        if (offset[0] === "-") {
-          sign = OffsetSign.Minus;
-        }
-
-        offset = offset.substring(1);
-      }
-
-      const offsetSource = isRegister(offset)
-        ? OffsetType.Register
-        : OffsetType.Literal;
-
-      const offsetValue =
-        offsetSource == OffsetType.Register
-          ? registerByNameLookup[offset as RegisterName]
-          : parseNumber(offset) & 0xff;
-
-      addressSourceOperands.forEach((o) => this.program.push(o));
-      this.program.push(offsetSource);
-      this.program.push(sign);
-      this.program.push(offsetValue);
-
+      this.parseMemoryAccessInstruction(Opcode.Poke, operands);
       return;
     }
 
     if (instruction === "push") {
-      this.program.push(Opcode.Push);
-      if (operands.length !== 1) {
-        throw "push: expected operand";
-      }
-
-      if (isNumber(operands[0])) {
-        this.program.push(OperandType.Literal);
-        this.parseAndPushNumber(operands[0]);
-        return;
-      }
-
-      if (isRegister(operands[0])) {
-        this.program.push(OperandType.Register);
-        this.program.push(registerByNameLookup[operands[0] as RegisterName]);
-      }
-
+      this.parsePushInstruction(operands);
       return;
     }
 

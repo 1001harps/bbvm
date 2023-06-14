@@ -57,8 +57,8 @@ $define SCREEN_MEMORY_START ${addr(SCREEN_MEMORY_START)}
 
 $define KEY_STATE ${addr(KEY_STATE_ADDRESS)}
 
-$define SysCallOpcode.Print ${SysCallOpcode.Print}
-$define SysCallOpcode.Render ${SysCallOpcode.Render}
+$define SysCallOpcode_Print ${SysCallOpcode.Print}
+$define SysCallOpcode_Render ${SysCallOpcode.Render}
 
 $define KEYCODE_LEFT 1
 $define KEYCODE_RIGHT 2

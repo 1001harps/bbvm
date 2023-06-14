@@ -4,7 +4,7 @@ export const blue = (m: any) => "\x1b[34m" + m + "\x1b[0m";
 export const green = (m: any) => "\x1b[34m" + m + "\x1b[0m";
 export const cyan = (m: any) => "\x1b[36m" + m + "\x1b[0m";
 
-import { Opcode, instructionWidth } from "./opcode.ts";
+import { Opcode, instructionWidth } from "./core/opcode.ts";
 
 export class DisassemblyDebugger {
   branchOpcodes = [
