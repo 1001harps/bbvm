@@ -1,10 +1,3 @@
-import { Assembler } from "./assembler.ts";
-import { BlueBerry, bbHeader } from "./blueberry.ts";
-import { Preprocessor } from "./preprocessor.ts";
-
-const source = `
-${bbHeader}
-
 $define COUNTER 0xbbb9
 $define CURSOR_POSITION 0xaa00
 $define CURSOR_SPEED 1
@@ -15,19 +8,20 @@ jump main
 interrupt__render:
   call clear_screen_buffer
 
-  // draw x
+  // get y and push to stack
+  peek $CURSOR_POSITION[1]
+  / a 16
+  push a
+
+  // get x and push to stack
   peek $CURSOR_POSITION[0]
   / a 16
   push a
-  call draw_pixel
-  pop
 
-  // draw y
-  peek $CURSOR_POSITION[1]
-  push a
-  / a 16
+  // render
   call draw_pixel
-  pop
+  pop x
+  pop x
 
   syscall $SysCallOpcode.Render
   
@@ -128,51 +122,90 @@ is_key_pressed:
 is_left_key_pressed:
   push $KEYCODE_LEFT
   call is_key_pressed
-  pop
-  call print_a
+  pop x
   return
 
 is_right_key_pressed:
   push $KEYCODE_RIGHT
   call is_key_pressed
-  pop
+  pop x
   return
 
 is_up_key_pressed:
   push $KEYCODE_UP
   call is_key_pressed
-  pop
+  pop x
   return
 
 is_down_key_pressed:
   push $KEYCODE_DOWN
   call is_key_pressed
-  pop
+  pop x
+  return
+
+inc_x:
+  peek $CURSOR_POSITION[0]
+  + a 1
+  poke $CURSOR_POSITION[0]
+  return
+
+dec_x:
+  peek $CURSOR_POSITION[0]
+  - a 1
+  poke $CURSOR_POSITION[0]
+  return
+
+inc_y:
+  peek $CURSOR_POSITION[1]
+  + a 1
+  poke $CURSOR_POSITION[1]
+  return
+
+dec_y:
+  peek $CURSOR_POSITION[1]
+  - a 1
+  poke $CURSOR_POSITION[1]
+  return
+
+update:
+  // check up key
+  call is_up_key_pressed
+  jump==0 update_after_up_check
+
+  call dec_y
+
+  update_after_up_check:
+
+  // check down key
+  call is_down_key_pressed
+  jump==0 update_after_down_check
+
+  call inc_y
+
+  update_after_down_check:
+
+  // check left key
+  call is_left_key_pressed
+  jump==0 update_after_left_check
+
+  call dec_x
+
+  update_after_left_check:
+
+  // check right key
+  call is_right_key_pressed
+  jump==0 update_after_right_check
+
+  call inc_x
+
+  update_after_right_check:
+
   return
 
 main:
   call wait_2550
-
-  call is_up_key_pressed
-
-  jump==0 main
-
-  peek $CURSOR_POSITION[0]
-  + a 1
-  poke $CURSOR_POSITION[0]
-
+  call update
   jump main
 
 end:
   halt
-
-`;
-
-const p = new Preprocessor();
-const processedSource = p.run(source);
-
-const a = new Assembler();
-const program = a.run(processedSource);
-
-const bb = new BlueBerry();
-bb.start(program);
