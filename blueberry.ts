@@ -31,7 +31,6 @@ const keys = [
 const CLOCK_SPEED = 4_000_000; // 4Mhz
 const INSTRUCTIONS_PER_MS = CLOCK_SPEED / 1000;
 
-//(240 x 160)
 const SCREEN_WIDTH = 16;
 const SCREEN_HEIGHT = 16;
 const SCREEN_PIXEL_COUNT = SCREEN_WIDTH * SCREEN_HEIGHT;
@@ -48,31 +47,9 @@ export enum SysCallOpcode {
 
 export const addr = (n: number) => `0x${n.toString(16)}`;
 
-export const bbHeader = `
-$define SYSCALL_ARGS_ADDRESS ${addr(SYSCALL_ARGS_ADDRESS)}
-
-$define SCREEN_WIDTH ${SCREEN_WIDTH}
-$define SCREEN_HEIGHT ${SCREEN_HEIGHT}
-$define SCREEN_MEMORY_START ${addr(SCREEN_MEMORY_START)}
-
-$define KEY_STATE ${addr(KEY_STATE_ADDRESS)}
-
-$define SysCallOpcode_Print ${SysCallOpcode.Print}
-$define SysCallOpcode_Render ${SysCallOpcode.Render}
-
-$define KEYCODE_LEFT 1
-$define KEYCODE_RIGHT 2
-$define KEYCODE_UP 4
-$define KEYCODE_DOWN 8
-$define KEYCODE_Z 16
-$define KEYCODE_X 32
-$define KEYCODE_SPACE 64
-
-`;
-
 export class BlueBerry {
   start(rom: Uint8Array) {
-    const vm = new VM({ debug: false });
+    const vm = new VM({});
     vm.load(rom);
 
     const printQueue: number[] = [];
@@ -84,8 +61,6 @@ export class BlueBerry {
       while (printQueue.length > 0) {
         const value = printQueue.shift();
         if (!value && value !== 0) break;
-
-        console.log(`${green(value)}`);
 
         // same value, just increment count
         if (lastPrintedValue == value) {

@@ -1,0 +1,17 @@
+{
+  "version": "2",
+  "remote": {
+    "https://deno.land/std@0.191.0/fmt/colors.ts": "d67e3cd9f472535241a8e410d33423980bec45047e343577554d3356e1f0ef4e",
+    "https://deno.land/std@0.191.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
+    "https://deno.land/std@0.191.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
+    "https://deno.land/std@0.191.0/testing/asserts.ts": "e16d98b4d73ffc4ed498d717307a12500ae4f2cbe668f1a215632d19fcffc22f",
+    "https://deno.land/x/byte_type@0.1.7/ffi.ts": "5bc603fd9d0b695bcd1bdaeb45e6e34b0925d5cd8da41ceaec290570a55287e0",
+    "https://deno.land/x/moo@0.5.1-deno.2/mod.ts": "fbccad242a370172385c0545886e8051ab4c2cc86b4635798fcf490db718af4e",
+    "https://deno.land/x/moo@0.5.1-deno.2/moo.js": "90e55b04d273feb1ccf0bd7f20df24259715bbfbbffe0e462882c5c5caeb232b",
+    "https://deno.land/x/moo@0.5.1-deno.2/node_modules/@types/moo/index.d.ts": "c5c99d76953f4f240dda31cf89738712bd6989459fe971f02bacd8148aaf4ceb",
+    "https://deno.land/x/moo@0.5.1.1/index.ts": "3aca292f16d0595ae9987b81c876631b7e0e86a21fabdbfa2ac9a9e564b7fbd4",
+    "https://deno.land/x/moo@0.5.1.1/moo.ts": "b69e5f13dd204508cc171e140d7009086030a253312d3844799a567aa93fe829",
+    "https://deno.land/x/moo@0.5.1.1/node_modules/@types/moo/index.d.ts": "b1ec78716c5d8b56d42aaf794020cf81cf479a3df7b3f404028eecef3d794e73",
+    "https://deno.land/x/sdl2@0.6.0/mod.ts": "ca4cd06528e306a361f6219f6ab44cb0f64c4816c7edbb6bed698fcabff41664"
+  }
+}

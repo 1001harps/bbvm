@@ -66,7 +66,7 @@ export enum Opcode {
   SysCall,
 }
 
-export const opcodeByInstructionNameLookup: Record<string, Opcode> = {
+export const opcodeByInstructionNameLookup = {
   halt: Opcode.Halt,
   set: Opcode.Set,
   peek: Opcode.Peek,
@@ -116,6 +116,190 @@ export const instructionWidth: Record<Opcode, number> = {
   [Opcode.Push]: 3,
   [Opcode.Pop]: 2,
   [Opcode.SysCall]: 2,
+};
+
+export type InstructionName = keyof typeof opcodeByInstructionNameLookup;
+
+export type OperandDefinition = {
+  validTypes: OperandType[];
+  canHaveOffset?: boolean;
+  optional?: boolean;
+};
+
+export type InstructionDefinition = {
+  opcode: Opcode;
+  operands: OperandDefinition[];
+  width: number;
+};
+
+const arithmeticLogicOperands: OperandDefinition[] = [
+  { validTypes: [OperandType.Register] },
+  {
+    validTypes: [OperandType.Register, OperandType.Literal],
+  },
+];
+
+// TODO: we should be able to compute the widths from the operands
+export const instructions: Record<InstructionName, InstructionDefinition> = {
+  halt: {
+    opcode: Opcode.Halt,
+    width: instructionWidth[Opcode.Halt],
+    operands: [],
+  },
+  set: {
+    opcode: Opcode.Set,
+    width: instructionWidth[Opcode.Set],
+    operands: [
+      { validTypes: [OperandType.Register] },
+      {
+        validTypes: [OperandType.Register, OperandType.Literal],
+      },
+    ],
+  },
+  peek: {
+    opcode: Opcode.Peek,
+    width: instructionWidth[Opcode.Peek],
+    operands: [
+      {
+        validTypes: [
+          OperandType.Register,
+          OperandType.Address,
+          OperandType.Literal,
+        ],
+        canHaveOffset: true,
+      },
+    ],
+  },
+  poke: {
+    opcode: Opcode.Poke,
+    width: instructionWidth[Opcode.Poke],
+    operands: [
+      {
+        validTypes: [
+          OperandType.Register,
+          OperandType.Address,
+          OperandType.Literal,
+        ],
+        canHaveOffset: true,
+      },
+    ],
+  },
+  "+": {
+    opcode: Opcode.Add,
+    width: instructionWidth[Opcode.Add],
+    operands: arithmeticLogicOperands,
+  },
+  "-": {
+    opcode: Opcode.Subtract,
+    width: instructionWidth[Opcode.Subtract],
+    operands: arithmeticLogicOperands,
+  },
+  "*": {
+    opcode: Opcode.Multiply,
+    width: instructionWidth[Opcode.Multiply],
+    operands: arithmeticLogicOperands,
+  },
+  "/": {
+    opcode: Opcode.Divide,
+    width: instructionWidth[Opcode.Divide],
+    operands: arithmeticLogicOperands,
+  },
+  "<<": {
+    opcode: Opcode.ShiftLeft,
+    width: instructionWidth[Opcode.ShiftLeft],
+    operands: arithmeticLogicOperands,
+  },
+  ">>": {
+    opcode: Opcode.ShiftRight,
+    width: instructionWidth[Opcode.ShiftRight],
+    operands: arithmeticLogicOperands,
+  },
+  "==": {
+    opcode: Opcode.EqualTo,
+    width: instructionWidth[Opcode.EqualTo],
+    operands: arithmeticLogicOperands,
+  },
+  "!=": {
+    opcode: Opcode.NotEqualTo,
+    width: instructionWidth[Opcode.NotEqualTo],
+    operands: arithmeticLogicOperands,
+  },
+  "&": {
+    opcode: Opcode.And,
+    width: instructionWidth[Opcode.And],
+    operands: arithmeticLogicOperands,
+  },
+  "|": {
+    opcode: Opcode.Or,
+    width: instructionWidth[Opcode.Or],
+    operands: arithmeticLogicOperands,
+  },
+  "~": {
+    opcode: Opcode.Not,
+    width: instructionWidth[Opcode.Not],
+    operands: arithmeticLogicOperands,
+  },
+  jump: {
+    opcode: Opcode.Jump,
+    width: instructionWidth[Opcode.Jump],
+    operands: [
+      {
+        validTypes: [OperandType.Address, OperandType.Register],
+      },
+    ],
+  },
+  "jump==0": {
+    opcode: Opcode.JumpIfZero,
+    width: instructionWidth[Opcode.JumpIfZero],
+    operands: [
+      {
+        validTypes: [OperandType.Address, OperandType.Register],
+      },
+    ],
+  },
+  "jump!=0": {
+    opcode: Opcode.JumpIfNotZero,
+    width: instructionWidth[Opcode.JumpIfNotZero],
+    operands: [
+      {
+        validTypes: [OperandType.Address, OperandType.Register],
+      },
+    ],
+  },
+  call: {
+    opcode: Opcode.Call,
+    width: instructionWidth[Opcode.Call],
+    operands: [
+      {
+        validTypes: [OperandType.Address, OperandType.Register],
+        canHaveOffset: true,
+      },
+    ],
+  },
+  return: {
+    opcode: Opcode.Return,
+    width: instructionWidth[Opcode.Return],
+    operands: [],
+  },
+  push: {
+    opcode: Opcode.Push,
+    width: instructionWidth[Opcode.Push],
+    operands: [
+      {
+        validTypes: [OperandType.Literal, OperandType.Register],
+      },
+    ],
+  },
+  pop: {
+    opcode: Opcode.Pop,
+    width: instructionWidth[Opcode.Pop],
+    operands: [{ validTypes: [OperandType.Register], optional: true }],
+  },
+  syscall: {
+    opcode: Opcode.Pop,
+    width: instructionWidth[Opcode.Pop],
+    operands: [{ validTypes: [OperandType.Literal] }],
+  },
 };
 
 type Byte = number;

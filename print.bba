@@ -1,0 +1,6 @@
+import "bb.bba"
+
+push 123
+call #print
+pop
+halt

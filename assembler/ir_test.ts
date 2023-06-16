@@ -4,19 +4,19 @@ import {
   assertFalse,
   assertObjectMatch,
 } from "https://deno.land/std@0.191.0/testing/asserts.ts";
-import { Lexer } from "./lexer.ts";
-import {
-  IRConstDefinition,
-  IRGenerator,
-  IRLabelDefinition,
-  IRToken,
-  Offset,
-} from "./ir.ts";
 import {
   Register,
   RegisterName,
   registerByNameLookup,
 } from "../core/opcode.ts";
+import {
+  IRConstDefinition,
+  IRGenerator,
+  IRLabelDefinition,
+  IROffset,
+  IRToken,
+} from "./ir.ts";
+import { Lexer } from "./lexer.ts";
 
 const instructionTestData: { source: string; expected: Partial<IRToken> }[] = [
   {
@@ -25,6 +25,7 @@ const instructionTestData: { source: string; expected: Partial<IRToken> }[] = [
       type: "instruction",
       name: "push",
       operands: [
+        // @ts-ignore
         {
           type: "integer_literal",
           value: 123,
@@ -38,10 +39,12 @@ const instructionTestData: { source: string; expected: Partial<IRToken> }[] = [
       type: "instruction",
       name: "set",
       operands: [
+        // @ts-ignore
         {
           type: "register_literal",
           value: Register.A,
         },
+        // @ts-ignore
         {
           type: "integer_literal",
           value: 123,
@@ -50,11 +53,12 @@ const instructionTestData: { source: string; expected: Partial<IRToken> }[] = [
     },
   },
   {
-    source: "jump $test",
+    source: "jump #test",
     expected: {
       type: "instruction",
       name: "jump",
       operands: [
+        // @ts-ignore
         {
           type: "label",
           value: "test",
@@ -63,11 +67,12 @@ const instructionTestData: { source: string; expected: Partial<IRToken> }[] = [
     },
   },
   {
-    source: "jump $test[0]",
+    source: "jump #test[0]",
     expected: {
       type: "instruction",
       name: "jump",
       operands: [
+        // @ts-ignore
         {
           type: "label",
           value: "test",
@@ -90,11 +95,16 @@ instructionTestData.forEach(({ source, expected }) => {
     const irgen = new IRGenerator();
     const ir = irgen.run(tokens);
 
-    assertEquals(ir.length, 1);
+    assertEquals(ir.length, 1, `expected 1 IR token, got ${ir.length}`);
     assertEquals(ir[0].type, "instruction");
     if (ir[0].type === "instruction") {
       //@ts-ignore
-      assertEquals(expected.operands.length, ir[0].operands.length);
+      const expectedOperandAmount = expected.operands.length;
+      assertEquals(
+        ir[0].operands.length,
+        expectedOperandAmount,
+        `expected instruction to have ${expectedOperandAmount} operands, got ${ir[0].operands.length}`
+      );
       assertObjectMatch(ir[0], expected);
     }
   });
@@ -147,7 +157,7 @@ Object.keys(RegisterName).forEach((r) => {
 
 Deno.test(`IRGen.parseOperand() -> label`, () => {
   const l = new Lexer();
-  const tokens = l.run("", "$test_label");
+  const tokens = l.run("", "#test_label");
 
   const irgen = new IRGenerator();
   irgen.tokens = tokens;
@@ -161,7 +171,7 @@ Deno.test(`IRGen.parseOperand() -> label`, () => {
 
 Deno.test(`IRGen.parseOperand() -> label with offset`, () => {
   const l = new Lexer();
-  const tokens = l.run("", "$test_label[-1]");
+  const tokens = l.run("", "#test_label[-1]");
 
   const irgen = new IRGenerator();
   irgen.tokens = tokens;
@@ -170,7 +180,7 @@ Deno.test(`IRGen.parseOperand() -> label with offset`, () => {
   assertEquals(operand.type, "label");
   if (operand.type === "label") {
     assertExists(operand.offset);
-    assertObjectMatch(operand.offset, {
+    assertObjectMatch(operand.offset as IROffset, {
       type: "literal",
       value: 1,
       sign: "-",
@@ -206,7 +216,7 @@ Deno.test(`IRGen const definition - register`, () => {
 
 Deno.test(`IRGen label definition`, () => {
   const l = new Lexer();
-  const tokens = l.run("", "$test:");
+  const tokens = l.run("", "#test:");
 
   const irgen = new IRGenerator();
   const ir = irgen.run(tokens);
@@ -216,7 +226,7 @@ Deno.test(`IRGen label definition`, () => {
   assertEquals(def.name, "test");
 });
 
-const offsetTestData: { source: string; expected: Offset }[] = [
+const offsetTestData: { source: string; expected: IROffset }[] = [
   {
     source: "[0]",
     expected: {
@@ -294,4 +304,193 @@ offsetTestData.forEach(({ source, expected }) => {
 
     assertObjectMatch(offset, expected);
   });
+});
+
+Deno.test(`call label after another instruction`, () => {
+  const l = new Lexer();
+  const source = `
+  halt
+  call #test
+  `;
+
+  const tokens = l.run("", source);
+
+  const irgen = new IRGenerator();
+  const result = irgen.run(tokens);
+
+  const expected = [
+    { type: "instruction", name: "halt" },
+    {
+      type: "instruction",
+      name: "call",
+      operands: [
+        {
+          type: "label",
+          value: "test",
+        },
+      ],
+    },
+  ];
+
+  assertEquals(result.length, expected.length);
+
+  for (let i = 0; i < expected.length; i++) {
+    assertObjectMatch(result[i], expected[i]);
+  }
+});
+
+Deno.test(`peek - literal with register offset`, () => {
+  const l = new Lexer();
+  const source = `
+  #label:
+  peek 0xabcd[-a]
+  `;
+
+  const tokens = l.run("", source);
+
+  const irgen = new IRGenerator();
+  const result = irgen.run(tokens);
+
+  const expected: IRToken[] = [
+    { type: "label_definition", name: "label" } as IRToken,
+    {
+      type: "instruction",
+      name: "peek",
+      operands: [
+        {
+          type: "integer_literal",
+          value: 0xabcd,
+          offset: {
+            type: "register",
+            sign: "-",
+            value: Register.A,
+          },
+        },
+      ],
+    } as IRToken,
+  ];
+
+  assertEquals(result.length, expected.length);
+
+  for (let i = 0; i < expected.length; i++) {
+    assertObjectMatch(result[i], expected[i]);
+  }
+});
+
+Deno.test(`const definition`, () => {
+  const l = new Lexer();
+  const source = `
+const test = 0xbb00
+  `;
+
+  const tokens = l.run("", source);
+
+  const irgen = new IRGenerator();
+  const result = irgen.run(tokens);
+
+  const expected: IRToken[] = [
+    {
+      type: "const_definition",
+      name: "test",
+      value: {
+        type: "integer_literal",
+        value: 0xbb00,
+      },
+    } as IRToken,
+  ];
+
+  assertEquals(result.length, expected.length);
+
+  for (let i = 0; i < expected.length; i++) {
+    assertObjectMatch(result[i], expected[i]);
+  }
+});
+
+Deno.test(`subroutine using consts`, () => {
+  const l = new Lexer();
+  const source = `
+const test_addr = 123
+const test_code = 234
+
+#print_a:
+  poke $test_addr[0]
+  syscall $test_code
+  return
+  `;
+
+  const tokens = l.run("", source);
+
+  const irgen = new IRGenerator();
+  const result = irgen.run(tokens);
+
+  // :((((
+  result.forEach((irToken) => {
+    // @ts-ignore
+    delete irToken.token;
+    // @ts-ignore
+    if (irToken.operands) {
+      // @ts-ignore
+      irToken.operands.forEach((op) => {
+        delete op.token;
+      });
+    }
+  });
+
+  const expected = [
+    {
+      type: "const_definition",
+      name: "test_addr",
+      value: {
+        type: "integer_literal",
+        value: 123,
+      },
+    } as IRToken,
+    {
+      type: "const_definition",
+      name: "test_code",
+      value: {
+        type: "integer_literal",
+        value: 234,
+      },
+    } as IRToken,
+    {
+      type: "label_definition",
+      name: "print_a",
+    },
+    {
+      type: "instruction",
+      name: "poke",
+      operands: [
+        {
+          type: "const",
+          value: "test_addr",
+          offset: {
+            type: "literal",
+            sign: "+",
+            value: 0,
+          } as IROffset,
+        },
+      ],
+    },
+    {
+      type: "instruction",
+      name: "syscall",
+      operands: [
+        {
+          type: "const",
+          value: "test_code",
+        },
+      ],
+    },
+    {
+      type: "instruction",
+      name: "return",
+    },
+  ];
+
+  assertEquals(result.length, expected.length);
+
+  for (let i = 0; i < expected.length; i++) {
+    assertObjectMatch(result[i], expected[i]);
+  }
 });

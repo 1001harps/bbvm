@@ -8,8 +8,14 @@ import {
   Register,
   RegisterName,
   registerByNameLookup,
-} from "./core/opcode.ts";
-import { Assembler, isNumber, isRegister, parseNumber } from "./assembler.ts";
+} from "../core/opcode.ts";
+import {
+  Assembler,
+  FileResolver,
+  isNumber,
+  isRegister,
+  parseNumber,
+} from "./assembler.ts";
 
 //#region parse functions
 const isNumberTestData: [string, boolean][] = [
@@ -72,7 +78,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
   return [
     {
       source: `
-      label:
+      #label:
       peek ${address}`,
       expected: [
         Opcode.Peek,
@@ -84,7 +90,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[0]`,
       expected: [
         Opcode.Peek,
@@ -96,7 +102,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[1]`,
       expected: [
         Opcode.Peek,
@@ -108,7 +114,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[+1]`,
       expected: [
         Opcode.Peek,
@@ -120,7 +126,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[-1]`,
       expected: [
         Opcode.Peek,
@@ -132,7 +138,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[a]`,
       expected: [
         Opcode.Peek,
@@ -144,7 +150,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[+a]`,
       expected: [
         Opcode.Peek,
@@ -156,7 +162,7 @@ const getPeekTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       peek ${address}[-a]`,
       expected: [
         Opcode.Peek,
@@ -182,7 +188,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
   return [
     {
       source: `
-      label:
+      #label:
       poke ${address}`,
       expected: [
         Opcode.Poke,
@@ -194,7 +200,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[0]`,
       expected: [
         Opcode.Poke,
@@ -206,7 +212,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[1]`,
       expected: [
         Opcode.Poke,
@@ -218,7 +224,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[+1]`,
       expected: [
         Opcode.Poke,
@@ -230,7 +236,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[-1]`,
       expected: [
         Opcode.Poke,
@@ -242,7 +248,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[a]`,
       expected: [
         Opcode.Poke,
@@ -254,7 +260,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[+a]`,
       expected: [
         Opcode.Poke,
@@ -266,7 +272,7 @@ const getPokeTests = (addressType: AddressType, address: string) => {
     },
     {
       source: `
-      label:
+      #label:
       poke ${address}[-a]`,
       expected: [
         Opcode.Poke,
@@ -280,10 +286,10 @@ const getPokeTests = (addressType: AddressType, address: string) => {
 };
 
 const labelTestData: { source: string; expected: number[] }[] = [
-  { source: "label:", expected: [] },
+  { source: "#label:", expected: [] },
   {
     source: `
-        label:
+        #label:
         halt
       `,
     expected: [Opcode.Halt],
@@ -291,14 +297,14 @@ const labelTestData: { source: string; expected: number[] }[] = [
   {
     source: `
         halt
-        label:
+        #label:
       `,
     expected: [Opcode.Halt],
   },
   {
     source: `
         halt
-        label:
+        #label:
         halt
       `,
     expected: [Opcode.Halt, Opcode.Halt],
@@ -306,19 +312,19 @@ const labelTestData: { source: string; expected: number[] }[] = [
   {
     source: `
         pop a
-        label:
+        #label:
         halt
-        call label
+        call #label
       `,
     expected: [Opcode.Pop, Register.A, Opcode.Halt, Opcode.Call, 0, 2],
   },
   {
     source: `
-        start:
+        #start:
         push 123
-        end:
+        #end:
         halt
-        call end
+        call #end
       `,
     expected: [
       Opcode.Push,
@@ -347,14 +353,14 @@ const operatorTestData: [string, Opcode][] = [
 ];
 
 //#region instructions
-const assemblerTestData: { source: string; expected: number[] }[] = [
+let assemblerTestData: { source: string; expected: number[] }[] = [
   // comments
   { source: "//", expected: [] },
   { source: "// halt", expected: [] },
   // single opcode instructions
   { source: "halt", expected: [Opcode.Halt] },
-
-  // arithmetic/logic
+  { source: "return", expected: [Opcode.Return] },
+  // // arithmetic/logic
   ...operatorTestData.map(([operator, opcode]) => ({
     source: `${operator} a x`,
     expected: [opcode, Register.A, OperandType.Register, Register.X],
@@ -363,47 +369,7 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
     source: `${operator} a 123`,
     expected: [opcode, Register.A, OperandType.Literal, 123],
   })),
-
-  // subroutines
-  { source: "pop", expected: [Opcode.Pop, Register.A] },
-  { source: "pop a", expected: [Opcode.Pop, Register.A] },
-  { source: "pop x", expected: [Opcode.Pop, Register.X] },
-  { source: "return", expected: [Opcode.Return] },
-  // labels
-  ...labelTestData,
-  // set
-  {
-    source: "set a=123",
-    expected: [Opcode.Set, Register.A, OperandType.Literal, 123],
-  },
-  {
-    source: "set a=x",
-    expected: [Opcode.Set, Register.A, OperandType.Register, Register.X],
-  },
-
-  ...getPeekTests(AddressType.Register, "xy"),
-  ...getPeekTests(AddressType.Register, "fp"),
-  ...getPeekTests(AddressType.Literal, "0xabcd"),
-  ...getPeekTests(AddressType.Literal, "label"),
-
-  ...getPokeTests(AddressType.Register, "xy"),
-  ...getPokeTests(AddressType.Literal, "0xabcd"),
-  ...getPokeTests(AddressType.Literal, "label"),
-
-  {
-    source: "poke 0xcccc",
-    expected: [
-      Opcode.Poke,
-      AddressType.Literal,
-      0xcc,
-      0xcc,
-      OffsetType.Literal,
-      OffsetSign.Plus,
-      0,
-    ],
-  },
-
-  // push
+  // stack
   {
     source: "push 123 ",
     expected: [Opcode.Push, OperandType.Literal, 123],
@@ -416,6 +382,41 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
       registerByNameLookup[RegisterName[reg as RegisterName]],
     ],
   })),
+  { source: "pop", expected: [Opcode.Pop, Register.A] },
+  { source: "pop a", expected: [Opcode.Pop, Register.A] },
+  { source: "pop x", expected: [Opcode.Pop, Register.X] },
+  // subroutines
+  { source: "return", expected: [Opcode.Return] },
+  // labels
+  ...labelTestData,
+  // set
+  {
+    source: "set a 123",
+    expected: [Opcode.Set, Register.A, OperandType.Literal, 123],
+  },
+  {
+    source: "set a x",
+    expected: [Opcode.Set, Register.A, OperandType.Register, Register.X],
+  },
+  ...getPeekTests(AddressType.Register, "xy"),
+  ...getPeekTests(AddressType.Register, "fp"),
+  ...getPeekTests(AddressType.Literal, "0xabcd"),
+  ...getPeekTests(AddressType.Literal, "#label"),
+  ...getPokeTests(AddressType.Register, "xy"),
+  ...getPokeTests(AddressType.Literal, "0xabcd"),
+  ...getPokeTests(AddressType.Literal, "#label"),
+  {
+    source: "poke 0xcccc",
+    expected: [
+      Opcode.Poke,
+      AddressType.Literal,
+      0xcc,
+      0xcc,
+      OffsetType.Literal,
+      OffsetSign.Plus,
+      0,
+    ],
+  },
   // call
   {
     source: "call 123",
@@ -423,8 +424,8 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
   },
   {
     source: `
-    label:
-    call label`,
+    #label:
+    call #label`,
     expected: [Opcode.Call, 0, 0],
   },
   // jump
@@ -434,8 +435,8 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
   },
   {
     source: `
-        label:
-        jump label`,
+        #label:
+        jump #label`,
     expected: [Opcode.Jump, 0, 0],
   },
   {
@@ -444,8 +445,8 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
   },
   {
     source: `
-        label:
-        jump!=0 label`,
+        #label:
+        jump!=0 #label`,
     expected: [Opcode.JumpIfNotZero, 0, 0],
   },
   {
@@ -454,22 +455,34 @@ const assemblerTestData: { source: string; expected: number[] }[] = [
   },
   {
     source: `
-        label:
-        jump!=0 label`,
+        #label:
+        jump!=0 #label`,
     expected: [Opcode.JumpIfNotZero, 0, 0],
   },
-
   // syscall
   {
     source: "syscall 123",
     expected: [Opcode.SysCall, 123],
   },
+  {
+    source: `
+    const code = 123
+    syscall $code
+    `,
+    expected: [Opcode.SysCall, 123],
+  },
 ];
+
+const testFileResolver = (file: string): FileResolver => ({
+  readFile() {
+    return file;
+  },
+});
 
 assemblerTestData.forEach(({ source, expected }) => {
   Deno.test(`assembler: ${source}`, () => {
-    const a = new Assembler();
-    const program = a.run(source);
+    const a = new Assembler(testFileResolver(source));
+    const program = a.run(source) as Uint8Array;
 
     assertEquals(program.length, expected.length);
     for (let i = 0; i < expected.length; i++) {

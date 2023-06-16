@@ -1,9 +1,13 @@
 import {
+  InstructionName,
   Register,
   RegisterName,
+  instructions,
+  opcodeByInstructionNameLookup,
   registerByNameLookup,
 } from "../core/opcode.ts";
-import { Token, TokenType } from "./lexer.ts";
+import { typeError, unexpectedToken } from "./error.ts";
+import { LexerToken, TokenType } from "./lexer.ts";
 
 export const parseInteger = (s: string) => {
   if (s.startsWith("0b")) {
@@ -19,239 +23,345 @@ export const parseInteger = (s: string) => {
   return parseInt(s);
 };
 
-export type Offset = {
+export type IROffset = {
   type: "literal" | "register";
   value: number;
   sign: "+" | "-";
 };
 
-export type IROperand =
-  | {
-      type: "integer_literal";
-      value: number;
-      offset?: Offset;
-    }
-  | {
-      type: "register_literal";
-      value: Register;
-    }
-  | {
-      type: "label";
-      value: string;
-      offset?: Offset;
-    };
+export type IRIntegerLiteralOperand = {
+  type: "integer_literal";
+  value: number;
+  offset?: IROffset;
+  token: LexerToken;
+};
+
+export type IRRegisterLiteralOperand = {
+  type: "register_literal";
+  value: Register;
+  offset?: IROffset;
+  token: LexerToken;
+};
+
+export type IRLabelOperand = {
+  type: "label";
+  value: string;
+  offset?: IROffset;
+  token: LexerToken;
+};
+
+export type IRConstOperand = {
+  type: "const";
+  value: string;
+  offset?: IROffset;
+  token: LexerToken;
+};
+
+export type IRNonConstOperand =
+  | IRIntegerLiteralOperand
+  | IRRegisterLiteralOperand
+  | IRLabelOperand;
+
+export type IROperand = IRNonConstOperand | IRConstOperand;
 
 export type IRInstruction = {
   type: "instruction";
-  name: string;
+  name: keyof typeof opcodeByInstructionNameLookup;
   operands: IROperand[];
-  token: Token;
+  token: LexerToken;
 };
 
 export type IRLabelDefinition = {
   type: "label_definition";
   name: string;
-  token: Token;
+  token: LexerToken;
 };
 
 export type IRConstDefinition = {
   type: "const_definition";
   name: string;
-  value: IROperand;
-  token: Token;
+  value: IRNonConstOperand;
+  token: LexerToken;
 };
 
-export type IRToken = IRInstruction | IRLabelDefinition | IRConstDefinition;
+export type IRImport = {
+  type: "import";
+  filename: string;
+  token: LexerToken;
+};
+
+export type IRToken =
+  | IRInstruction
+  | IRLabelDefinition
+  | IRConstDefinition
+  | IRImport;
 
 export class IRGenerator {
   index = 0;
-  tokens: Token[] = [];
+  tokens: LexerToken[] = [];
 
-  currentToken() {
-    return this.tokens[this.index];
-  }
+  eof = () => this.tokens[this.tokens.length - 1];
 
-  nextToken() {
+  expect(type: TokenType): LexerToken {
+    const token = this.tokens[this.index];
+    if (!token) throw unexpectedToken(this.eof());
+
+    if (token.type !== type) throw unexpectedToken(token);
+
     this.index++;
-    return this.tokens[this.index];
+    return token;
   }
 
-  peekNextToken() {
-    return this.tokens[this.index + 1];
+  expectRange(types: [TokenType]): LexerToken {
+    const token = this.tokens[this.index];
+    if (!token) throw unexpectedToken(this.eof());
+
+    if (!types.includes(token.type)) throw unexpectedToken(token);
+
+    this.index++;
+    return token;
+  }
+
+  expectWithValue(type: TokenType, value: string): LexerToken {
+    const token = this.expect(type);
+    if (token.value !== value) throw unexpectedToken(token);
+    return token;
+  }
+
+  peekNextToken(): LexerToken {
+    if (this.tokens[this.index]) {
+      return this.tokens[this.index];
+    }
+
+    return this.eof();
+  }
+
+  nextTokenIsType(type: TokenType): boolean {
+    const nextToken = this.tokens[this.index];
+    if (!nextToken) return false;
+    return nextToken.type === type;
   }
 
   skipWhiteSpace() {
-    while (this.peekNextToken()?.type === "whitespace") {
-      this.nextToken();
+    if (this.peekNextToken()?.type === "whitespace") {
+      this.expect("whitespace");
     }
   }
 
-  expect(type: TokenType) {
-    const token = this.currentToken();
-
-    if (token.type !== type) {
-      throw `expected type ${type}, got ${token}`;
-    }
-
-    return token;
-  }
-
-  expectNext(type: TokenType) {
-    const token = this.nextToken();
-    if (token.type !== type) {
-      throw `expected type ${type}, got ${token}`;
-    }
-
-    return token;
-  }
-
-  parseOffset(): Offset {
+  parseOffset(): IROffset {
     this.expect("left_bracket");
 
     let sign: "+" | "-" = "+";
 
-    let token = this.nextToken();
+    let peek = this.peekNextToken();
 
-    if (token.type === "plus") {
-      token = this.nextToken();
-    }
-
-    if (token.type === "minus") {
+    if (peek.type === "plus") {
+      this.expect("plus");
+    } else if (peek.type === "minus") {
+      this.expect("minus");
       sign = "-";
-      token = this.nextToken();
     }
 
-    if (token.type !== "integer_literal" && token.type !== "register_literal") {
-      throw `unexpected token: ${token.value}`;
+    peek = this.peekNextToken();
+
+    if (peek.type !== "integer_literal" && peek.type !== "register_literal") {
+      throw unexpectedToken(peek);
     }
 
-    this.expectNext("right_bracket");
+    if (peek.type === "integer_literal") {
+      this.expect("integer_literal");
+      this.expect("right_bracket");
 
-    if (token.type === "integer_literal") {
       return {
         type: "literal",
-        value: parseInteger(token.value),
+        value: parseInteger(peek.value),
         sign,
       };
     }
 
+    this.expect("register_literal");
+    this.expect("right_bracket");
+
     return {
       type: "register",
-      value: registerByNameLookup[token.value as RegisterName],
+      value: registerByNameLookup[peek.value as RegisterName],
       sign,
     };
   }
 
   parseOperand(): IROperand {
-    const token = this.currentToken();
+    const peek = this.peekNextToken();
 
-    switch (token.type) {
-      case "integer_literal":
-        return {
+    switch (peek.type) {
+      case "integer_literal": {
+        const token = this.expect("integer_literal");
+        const integer: IROperand = {
           type: "integer_literal",
-          value: parseInteger(token.value),
+          value: parseInteger(peek.value),
+          token,
         };
-      case "register_literal":
-        return {
+
+        if (this.nextTokenIsType("left_bracket")) {
+          integer.offset = this.parseOffset();
+        }
+
+        return integer;
+      }
+      case "register_literal": {
+        const token = this.expect("register_literal");
+
+        const register: IROperand = {
           type: "register_literal",
-          value: registerByNameLookup[token.value as RegisterName],
+          value: registerByNameLookup[peek.value as RegisterName],
+          token,
         };
+
+        if (this.nextTokenIsType("left_bracket")) {
+          register.offset = this.parseOffset();
+        }
+
+        return register;
+      }
       case "label": {
+        const token = this.expect("label");
+
         const label: IROperand = {
           type: "label",
-          value: token.value,
+          value: peek.value,
+          token,
         };
 
-        const hasOffset = this.peekNextToken()?.type === "left_bracket";
-
-        if (hasOffset) {
-          this.nextToken();
+        if (this.nextTokenIsType("left_bracket")) {
           label.offset = this.parseOffset();
         }
 
         return label;
       }
-      default:
-        throw "invalid operand: " + token.type;
-    }
-  }
 
-  run(tokens: Token[]): IRToken[] {
-    this.tokens = tokens;
+      case "const": {
+        const token = this.expect("const");
 
-    let token = this.currentToken();
-
-    const ir: IRToken[] = [];
-
-    while (token) {
-      if (token.type === "instruction") {
-        const instruction: IRToken = {
-          type: "instruction",
-          name: token.value,
-          operands: [],
+        const label: IROperand = {
+          type: "const",
+          value: peek.value,
           token,
         };
 
-        this.skipWhiteSpace();
-
-        token = this.nextToken();
-        if (!token) {
-          ir.push(instruction);
-          break;
+        if (this.nextTokenIsType("left_bracket")) {
+          label.offset = this.parseOffset();
         }
 
-        while (token && token.type !== "newline") {
-          const operand = this.parseOperand();
-          instruction.operands.push(operand);
-          this.skipWhiteSpace();
-          token = this.nextToken();
-        }
+        return label;
+      }
 
-        this.nextToken();
+      default:
+        throw unexpectedToken(peek);
+    }
+  }
 
-        ir.push(instruction);
+  parseInstruction() {
+    const token = this.expect("instruction");
 
-        // skip newline
-        this.nextToken();
+    const name = token.value as InstructionName;
+    const definition = instructions[name];
+    if (!definition) throw unexpectedToken(token);
 
-        token = this.nextToken();
+    this.skipWhiteSpace();
+
+    // TODO: type check
+    const instruction: IRToken = {
+      type: "instruction",
+      name: token.value as InstructionName,
+      operands: [],
+      token,
+    };
+
+    while (!this.nextTokenIsType("newline") && !this.nextTokenIsType("eof")) {
+      const operand = this.parseOperand();
+      instruction.operands.push(operand);
+      this.skipWhiteSpace();
+    }
+
+    return instruction;
+  }
+
+  run(tokens: LexerToken[]): IRToken[] {
+    this.tokens = tokens;
+    let token = this.peekNextToken();
+
+    const ir: IRToken[] = [];
+
+    while (token.type !== "eof") {
+      if (token.type === "instruction") {
+        ir.push(this.parseInstruction());
+        token = this.peekNextToken();
         continue;
       } else if (token.type === "keyword" && token.value === "const") {
+        this.expect("keyword");
         this.skipWhiteSpace();
-        const nameToken = this.expectNext("identifier");
+        const nameToken = this.expect("identifier");
 
         this.skipWhiteSpace();
-        this.expectNext("equals");
+        this.expect("equals");
 
         this.skipWhiteSpace();
-        this.nextToken();
         const value = this.parseOperand();
+        if (value.type === "const") {
+          throw typeError(
+            value.token,
+            `can't use const value in const definition`
+          );
+        }
 
         const constDef: IRToken = {
           type: "const_definition",
           name: nameToken.value,
           value,
-          token,
+          token: token,
         };
 
         ir.push(constDef);
 
-        token = this.nextToken();
+        token = this.peekNextToken();
+        continue;
+      } else if (token.type === "keyword" && token.value === "import") {
+        this.expect("keyword");
+        this.skipWhiteSpace();
+        const nameToken = this.expect("string");
+
+        const fileImport: IRToken = {
+          type: "import",
+          filename: nameToken.value,
+          token: token,
+        };
+
+        ir.push(fileImport);
+
+        token = this.peekNextToken();
         continue;
       } else if (token.type === "label_definition") {
+        this.expect("label_definition");
         const labelDef: IRToken = {
           type: "label_definition",
           name: token.value,
-          token,
+          token: token,
         };
 
         ir.push(labelDef);
 
-        token = this.nextToken();
+        token = this.peekNextToken();
+        continue;
+      } else if (
+        token.type === "comment" ||
+        token.type === "newline" ||
+        token.type === "whitespace"
+      ) {
+        this.index++;
+        token = this.peekNextToken();
         continue;
       }
 
-      throw "unexpdced token: " + token;
+      throw unexpectedToken(token);
     }
 
     return ir;

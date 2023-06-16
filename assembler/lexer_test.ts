@@ -7,7 +7,8 @@ Object.keys(RegisterName).forEach((r) => {
     const l = new Lexer();
     const tokens = l.run("", r);
 
-    assertEquals(tokens.length, 1);
+    assertEquals(tokens.length, 2);
+    assertEquals(tokens[1].type, "eof");
     assertEquals(tokens[0].type, "register_literal");
     assertEquals(tokens[0].value, r);
   });
@@ -18,7 +19,8 @@ Object.keys(RegisterName).forEach((r) => {
     const l = new Lexer();
     const tokens = l.run("", n);
 
-    assertEquals(tokens.length, 1);
+    assertEquals(tokens.length, 2);
+    assertEquals(tokens[1].type, "eof");
     assertEquals(tokens[0].type, "integer_literal");
     assertEquals(tokens[0].value, n);
   });

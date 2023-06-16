@@ -1,7 +1,13 @@
-import { Assembler, IRGenerator } from "./assembler.ts";
-import { Lexer } from "./assembler/lexer.ts";
-import { BlueBerry, bbHeader } from "./blueberry.ts";
-import { Preprocessor } from "./preprocessor.ts";
+import { Assembler, FileResolver } from "./assembler/assembler.ts";
+import { getErrorMessage, isParseError } from "./assembler/error.ts";
+import { BlueBerry } from "./blueberry.ts";
+import { DisassemblyDebugger } from "./debug.ts";
+
+class DenoFileResolver implements FileResolver {
+  readFile(filename: string): string {
+    return Deno.readTextFileSync(filename);
+  }
+}
 
 const entryPoint = Deno.args[0];
 if (!entryPoint) {
@@ -9,28 +15,20 @@ if (!entryPoint) {
   Deno.exit();
 }
 
-const source = Deno.readTextFileSync(entryPoint);
+try {
+  const a = new Assembler(new DenoFileResolver());
+  const program = a.run(entryPoint);
 
-const sourceWithHeader = `
-${source}
-`;
+  const d = new DisassemblyDebugger();
+  console.log(d.run(program));
 
-const l = new Lexer();
-const tokens = l.run(entryPoint, sourceWithHeader);
-// console.log(tokens);
+  const bb = new BlueBerry();
+  bb.start(program);
+} catch (error) {
+  if (isParseError(error)) {
+    console.error(getErrorMessage(error));
+    Deno.exit(1);
+  }
 
-const irg = new IRGenerator();
-const ir = irg.run(tokens);
-
-console.log(ir);
-
-throw 123;
-
-// const p = new Preprocessor();
-// const processedSource = p.run(sourceWithHeader);
-
-// const a = new Assembler();
-// const program = a.run(processedSource);
-
-// const bb = new BlueBerry();
-// bb.start(program);
+  throw error;
+}

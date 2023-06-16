@@ -1,0 +1,5 @@
+{
+  "tasks": {
+    "cli": "deno run --unstable --allow-ffi --allow-read --allow-env cli.ts"
+  }
+}

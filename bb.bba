@@ -1,0 +1,30 @@
+const SYSCALL_ARGS_ADDRESS = 0xbb00
+
+const SCREEN_WIDTH = 16
+const SCREEN_HEIGHT = 16
+const SCREEN_MEMORY_START = 0x1000
+
+const KEY_STATE = 0xcccc
+
+const SysCallOpcode_Print = 1
+const SysCallOpcode_Render = 2
+
+const KEYCODE_LEFT = 1
+const KEYCODE_RIGHT = 2
+const KEYCODE_UP = 4
+const KEYCODE_DOWN = 8
+const KEYCODE_Z = 16
+const KEYCODE_X = 32
+const KEYCODE_SPACE = 64
+
+// ()
+#print_a:
+  poke $SYSCALL_ARGS_ADDRESS[0]
+  syscall $SysCallOpcode_Print
+  return
+
+// (value)
+#print:
+  peek fp[0]
+  call #print_a
+  return
